@@ -36,10 +36,6 @@
 #error msgpack_unpack_object type is not defined
 #endif
 
-#ifndef msgpack_unpack_user
-#error msgpack_unpack_user type is not defined
-#endif
-
 #ifndef USE_CASE_RANGE
 #if !defined(_MSC_VER)
 #define USE_CASE_RANGE
@@ -58,7 +54,6 @@ msgpack_unpack_struct_decl(_stack) {
 };
 
 msgpack_unpack_struct_decl(_context) {
-	msgpack_unpack_user user;
 	unsigned int cs;
 	unsigned int trail;
 	unsigned int top;
@@ -71,7 +66,7 @@ msgpack_unpack_func(void, _init)(msgpack_unpack_struct(_context)* ctx)
 	ctx->cs = CS_HEADER;
 	ctx->trail = 0;
 	ctx->top = 0;
-	ctx->stack[0].obj = msgpack_unpack_callback(_root)(&ctx->user);
+	ctx->stack[0].obj = NULL;
 }
 
 msgpack_unpack_func(msgpack_unpack_object, _data)(msgpack_unpack_struct(_context)* ctx)
@@ -92,7 +87,6 @@ msgpack_unpack_func(int, _execute)(msgpack_unpack_struct(_context)* ctx, const c
 	unsigned int cs = ctx->cs;
 	unsigned int top = ctx->top;
 	msgpack_unpack_struct(_stack)* stack = ctx->stack;
-	msgpack_unpack_user* user = &ctx->user;
 
 	msgpack_unpack_object obj;
 	msgpack_unpack_struct(_stack)* c = NULL;
@@ -100,13 +94,13 @@ msgpack_unpack_func(int, _execute)(msgpack_unpack_struct(_context)* ctx, const c
 	int ret;
 
 #define push_simple_value(func) \
-	if(msgpack_unpack_callback(func)(user, &obj) < 0) { goto _failed; } \
+	if(msgpack_unpack_callback(func)(&obj) < 0) { goto _failed; } \
 	goto _push
 #define push_fixed_value(func, arg) \
-	if(msgpack_unpack_callback(func)(user, arg, &obj) < 0) { goto _failed; } \
+	if(msgpack_unpack_callback(func)(arg, &obj) < 0) { goto _failed; } \
 	goto _push
 #define push_variable_value(func, base, pos, len) \
-	if(msgpack_unpack_callback(func)(user, \
+	if(msgpack_unpack_callback(func)(\
 		(const char*)base, (const char*)pos, len, &obj) < 0) { goto _failed; } \
 	goto _push
 
@@ -121,7 +115,7 @@ msgpack_unpack_func(int, _execute)(msgpack_unpack_struct(_context)* ctx, const c
 	goto _fixed_trail_again
 
 #define start_container(func, count_, ct_) \
-	if(msgpack_unpack_callback(func)(user, count_, &stack[top].obj) < 0) { goto _failed; } \
+	if(msgpack_unpack_callback(func)(count_, &stack[top].obj) < 0) { goto _failed; } \
 	if((count_) == 0) { obj = stack[top].obj; goto _push; } \
 	if(top >= MSGPACK_MAX_STACK_SIZE) { goto _failed; } \
 	stack[top].ct = ct_; \
@@ -152,8 +146,9 @@ msgpack_unpack_func(int, _execute)(msgpack_unpack_struct(_context)* ctx, const c
 #define SWITCH_RANGE_END       } }
 #endif
 
-	if(p == pe) { goto _out; }
+
 	do {
+	    if(p == pe) { goto _out; }
 		switch(cs) {
 		case CS_HEADER:
 			SWITCH_RANGE_BEGIN
@@ -215,7 +210,6 @@ msgpack_unpack_func(int, _execute)(msgpack_unpack_struct(_context)* ctx, const c
 				goto _failed;
 			SWITCH_RANGE_END
 			// end CS_HEADER
-
 
 		_fixed_trail_again:
 			++p;
@@ -302,9 +296,8 @@ _push:
 	c = &stack[top-1];
 	switch(c->ct) {
 	case CT_ARRAY_ITEM:
-		if(msgpack_unpack_callback(_array_item)(user, c->curr, &c->obj, obj) < 0) { goto _failed; }
+		if(msgpack_unpack_callback(_array_item)(c->curr, &c->obj, obj) < 0) { goto _failed; }
 		if(++c->curr == c->count) {
-			msgpack_unpack_callback(_array_end)(user, &c->obj);
 			obj = c->obj;
 			--top;
 			/*printf("stack pop %d\n", top);*/
@@ -316,9 +309,8 @@ _push:
 		c->ct = CT_MAP_VALUE;
 		goto _header_again;
 	case CT_MAP_VALUE:
-		if(msgpack_unpack_callback(_map_item)(user, &c->obj, c->map_key, obj) < 0) { goto _failed; }
+		if(msgpack_unpack_callback(_map_item)(&c->obj, c->map_key, obj) < 0) { goto _failed; }
 		if(--c->count == 0) {
-			msgpack_unpack_callback(_map_end)(user, &c->obj);
 			obj = c->obj;
 			--top;
 			/*printf("stack pop %d\n", top);*/
@@ -368,7 +360,6 @@ _end:
 #undef msgpack_unpack_callback
 #undef msgpack_unpack_struct
 #undef msgpack_unpack_object
-#undef msgpack_unpack_user
 
 #undef push_simple_value
 #undef push_fixed_value

@@ -71,19 +71,11 @@ def packb(object o):
 
 
 cdef extern from "unpack.h":
-    ctypedef struct msgpack_user:
-        int use_list
-        PyObject* object_hook
-        PyObject* list_hook
-        char *encoding
-        char *unicode_errors
-
     ctypedef struct template_context:
-        msgpack_user user
-        PyObject* obj
-        size_t count
-        unsigned int ct
-        PyObject* key
+        unsigned int cs
+        unsigned int trail
+        unsigned int top
+        PyObject* stack
 
     int template_execute(template_context* ctx, const_char_ptr data,
                          size_t len, size_t* off) except -1
@@ -91,7 +83,7 @@ cdef extern from "unpack.h":
     object template_data(template_context* ctx)
 
 
-def unpackb(object packed, object object_hook=None, object list_hook=None, bint use_list=0, encoding=None, unicode_errors="strict"):
+def unpackb(object packed):
     """
     Unpack packed_bytes to object. Returns an unpacked object."""
     cdef template_context ctx
@@ -102,34 +94,7 @@ def unpackb(object packed, object object_hook=None, object list_hook=None, bint 
     cdef Py_ssize_t buf_len
     PyObject_AsReadBuffer(packed, <const_void_ptr*>&buf, &buf_len)
 
-    if encoding is None:
-        enc = NULL
-        err = NULL
-    else:
-        if isinstance(encoding, unicode):
-            bencoding = encoding.encode('ascii')
-        else:
-            bencoding = encoding
-        if isinstance(unicode_errors, unicode):
-            berrors = unicode_errors.encode('ascii')
-        else:
-            berrors = unicode_errors
-        enc = PyBytes_AsString(bencoding)
-        err = PyBytes_AsString(berrors)
-
     template_init(&ctx)
-    ctx.user.use_list = use_list
-    ctx.user.object_hook = ctx.user.list_hook = NULL
-    ctx.user.encoding = enc
-    ctx.user.unicode_errors = err
-    if object_hook is not None:
-        if not PyCallable_Check(object_hook):
-            raise TypeError("object_hook must be a callable.")
-        ctx.user.object_hook = <PyObject*>object_hook
-    if list_hook is not None:
-        if not PyCallable_Check(list_hook):
-            raise TypeError("list_hook must be a callable.")
-        ctx.user.list_hook = <PyObject*>list_hook
     _gc_disable()
     try:
         ret = template_execute(&ctx, buf, buf_len, &off)
@@ -159,17 +124,6 @@ cdef class Unpacker(object):
 
     `read_size` is used as `file_like.read(read_size)`. (default: 1M)
 
-    If `use_list` is true, msgpack list is deserialized to Python list.
-    Otherwise, it is deserialized to Python tuple. (default: False)
-
-    `object_hook` is same to simplejson. If it is not None, it should be callable
-    and Unpacker calls it when deserializing key-value.
-
-    `encoding` is encoding used for decoding msgpack bytes. If it is None (default),
-    msgpack bytes is deserialized to Python bytes.
-
-    `unicode_errors` is used for decoding bytes.
-
     example::
 
         unpacker = Unpacker()
@@ -185,12 +139,6 @@ cdef class Unpacker(object):
     cdef object file_like
     cdef object file_like_read
     cdef Py_ssize_t read_size
-    cdef bint use_list
-    cdef object object_hook
-    cdef object _bencoding
-    cdef object _berrors
-    cdef char *encoding
-    cdef char *unicode_errors
 
     def __cinit__(self):
         self.buf = NULL
@@ -199,10 +147,7 @@ cdef class Unpacker(object):
         free(self.buf)
         self.buf = NULL
 
-    def __init__(self, file_like=None, Py_ssize_t read_size=1024*1024, bint use_list=0,
-                 object object_hook=None, object list_hook=None,
-                 encoding=None, unicode_errors='strict'):
-        self.use_list = use_list
+    def __init__(self, file_like=None, Py_ssize_t read_size=1024*1024):
         self.file_like = file_like
         if file_like:
             self.file_like_read = file_like.read
@@ -216,30 +161,6 @@ cdef class Unpacker(object):
         self.buf_head = 0
         self.buf_tail = 0
         template_init(&self.ctx)
-        self.ctx.user.use_list = use_list
-        self.ctx.user.object_hook = self.ctx.user.list_hook = <PyObject*>NULL
-        if object_hook is not None:
-            if not PyCallable_Check(object_hook):
-                raise TypeError("object_hook must be a callable.")
-            self.ctx.user.object_hook = <PyObject*>object_hook
-        if list_hook is not None:
-            if not PyCallable_Check(list_hook):
-                raise TypeError("list_hook must be a callable.")
-            self.ctx.user.list_hook = <PyObject*>list_hook
-        if encoding is None:
-            self.ctx.user.encoding = NULL
-            self.ctx.user.unicode_errors = NULL
-        else:
-            if isinstance(encoding, unicode):
-                self._bencoding = encoding.encode('ascii')
-            else:
-                self._bencoding = encoding
-            self.ctx.user.encoding = PyBytes_AsString(self._bencoding)
-            if isinstance(unicode_errors, unicode):
-                self._berrors = unicode_errors.encode('ascii')
-            else:
-                self._berrors = unicode_errors
-            self.ctx.user.unicode_errors = PyBytes_AsString(self._berrors)
 
     def feed(self, object next_bytes):
         cdef char* buf
@@ -317,9 +238,3 @@ cdef class Unpacker(object):
     def __next__(self):
         return self.unpack()
 
-    # for debug.
-    #def _buf(self):
-    #    return PyString_FromStringAndSize(self.buf, self.buf_tail)
-
-    #def _off(self):
-    #    return self.buf_head
