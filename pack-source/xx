@@ -1,3 +1,5 @@
 cython mypack.pyx
 gcc -c -fPIC -O2 -I /usr/include/python2.7/ mypack.c
 gcc -shared mypack.o -o mypack.so
+rm mypack.c
+rm mypack.o
