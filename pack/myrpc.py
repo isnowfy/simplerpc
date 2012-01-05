@@ -25,7 +25,7 @@ def query(funcname,args,kwargs):
 def handler(s,addr):
     while True:
         while True:
-            data=s.recv(8192)
+            data=s.recv(1024)
             if(data=='exit'):
                 s.close()
                 print 'exit'
@@ -38,9 +38,16 @@ def handler(s,addr):
                 pass
         try:
             ret=query(func,args,kwargs)
-            s.send(pack.pack({0:ret}))
+            send=pack.pack({0:ret})
         except Exception,e:
-            s.send(pack.pack({1:str(e)}))
+            send=pack.pack({1:str(e)})
+        l=len(send)
+        now=0
+        while True:
+            tmp=s.send(send[now:])
+            if(tmp+now>=l):
+                break
+            now=now+tmp
 
 def main(port=12345):
     print remote_funcmap

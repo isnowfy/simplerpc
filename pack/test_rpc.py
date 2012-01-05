@@ -23,5 +23,9 @@ def loop():
 def err():
     raise Exception('haha')
 
+@myrpc.remote
+def echo(x):
+    return x
+
 if __name__ == '__main__':
     myrpc.main()
